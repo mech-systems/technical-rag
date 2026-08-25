@@ -20,6 +20,18 @@ TEST_CASES = [
         "expected_source": "borgbackup.md",
     },
     {
+        "question": "Does BorgBackup support deduplication?",
+        "expected_source": "borgbackup.md",
+    },
+    {
+        "question": "Does BorgBackup support encryption?",
+        "expected_source": "borgbackup.md",
+    },
+    {
+        "question": "Which commands are commonly used with BorgBackup?",
+        "expected_source": "borgbackup.md",
+    },
+    {
         "question": "What is WireGuard?",
         "expected_source": "wireguard.md",
     },
