@@ -17,6 +17,7 @@ result = collection.query(
 )
  
 for i, doc in enumerate(result["documents"][0], start=1):
-    print(f"\n=== Result {i} ===\n")
-    print(doc)
+    if doc.strip():
+        print(f"\n=== Result {i} ===\n")
+        print(doc)
 
