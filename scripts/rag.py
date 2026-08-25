@@ -29,16 +29,27 @@ if not documents:
 context = "\n\n".join(documents)
 
 prompt = f"""
-Answer the question using only the provided context.
-
+You are a documentation assistant.
+ 
+Rules:
+ 
+- Use ONLY the provided context.
+- Do NOT use your own knowledge.
+- Do NOT invent commands.
+- Do NOT add options.
+- Do NOT explain beyond the context.
+- Cite the source document name.
+ 
 Context:
+ 
 {context}
-
+ 
 Question:
 {question}
-
+ 
 Answer:
 """
+
 
 response = subprocess.run(
     ["ollama", "run", "granite3-dense:2b"],
