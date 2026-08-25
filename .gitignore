@@ -1,0 +1,66 @@
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+ 
+# Editors
+.vscode/
+.idea/
+*.code-workspace
+ 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+ 
+.pytest_cache/
+.mypy_cache/
+ 
+# Environment
+.env
+.env.*
+ 
+# Logs
+*.log
+!sample_logs/*.log
+ 
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+# ChromaDB
+db/
+ 
+# Temp
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+ 
+# Archives
+*.zip
+*.7z
+*.tar
+*.gz
+*.tgz
+ 
+# Sensitive files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+ 
+# Ansible
+*.retry
+vault_pass.txt
+ 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+
