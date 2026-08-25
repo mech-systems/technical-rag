@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 from pathlib import Path
 
 import chromadb
@@ -9,10 +8,10 @@ from sentence_transformers import SentenceTransformer
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOCS_PATH = PROJECT_ROOT / "docs"
 DB_PATH = PROJECT_ROOT / "db"
-
 COLLECTION_NAME = "knowledge"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 NORMALIZE_EMBEDDINGS = False
+
 
 def split_text(text, chunk_size=1000, overlap=200):
     chunks = []
@@ -29,6 +28,7 @@ def split_text(text, chunk_size=1000, overlap=200):
 
     return chunks
 
+
 def load_documents():
     documents = []
 
@@ -39,13 +39,14 @@ def load_documents():
             print(f"Skipping empty document: {file_path.name}")
             continue
 
-        documents.append(
-            {
-                "id": file_path.stem,
-                "content": content,
-                "source": file_path.name,
-            }
-        )
+        for chunk_index, chunk in enumerate(split_text(content)):
+            documents.append(
+                {
+                    "id": f"{file_path.stem}-{chunk_index}",
+                    "content": chunk,
+                    "source": file_path.name,
+                }
+            )
 
     return documents
 
@@ -56,16 +57,14 @@ def main():
     if not documents:
         raise SystemExit(f"No Markdown documents found in: {DOCS_PATH}")
 
-    print(f"Documents found: {len(documents)}")
+    print(f"Chunks found:    {len(documents)}")
     print(f"Database:        {DB_PATH}")
     print(f"Collection:      {COLLECTION_NAME}")
     print(f"Embedding model: {EMBEDDING_MODEL}")
     print()
 
     model = SentenceTransformer(EMBEDDING_MODEL)
-
     texts = [document["content"] for document in documents]
-
     embeddings = model.encode(
         texts,
         normalize_embeddings=NORMALIZE_EMBEDDINGS,
@@ -73,7 +72,6 @@ def main():
     ).tolist()
 
     client = chromadb.PersistentClient(path=str(DB_PATH))
-
     existing_collections = {
         collection.name for collection in client.list_collections()
     }
@@ -100,12 +98,11 @@ def main():
     )
 
     print()
-
     for document in documents:
-        print(f"Added: {document['source']}")
+        print(f"Added: {document['id']} ({document['source']})")
 
     print()
-    print(f"Ingest completed: {collection.count()} documents")
+    print(f"Ingest completed: {collection.count()} chunks")
 
 
 if __name__ == "__main__":
