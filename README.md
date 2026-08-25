@@ -65,3 +65,7 @@ To make this behavior transparent, the demonstrator always displays:
 ## Finding:
 Granite3-Dense:2B may supplement answers with model knowledge even
 when instructed to answer only from retrieved context.
+
+## Notes
+
+This project demonstrates retrieval, source attribution and strict RAG prompting.
