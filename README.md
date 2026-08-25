@@ -30,3 +30,24 @@ Query knowledge base:
 ```bash
 python scripts/query.py
 ```
+
+## Setup
+ 
+Create virtual environment:
+ 
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+ 
+Install dependencies:
+ 
+```bash
+pip install -r requirements.txt
+```
+
+## Requirements
+Python 3.14.6
+
+
+
