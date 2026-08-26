@@ -7,6 +7,8 @@ from pathlib import Path
 import chromadb
 from sentence_transformers import SentenceTransformer
 
+from strict_rag import answer_question, FALLBACK_ANSWER
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "db"
@@ -14,7 +16,8 @@ DB_PATH = PROJECT_ROOT / "db"
 # Muss dem Modell aus ingest.py entsprechen.
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
-TEST_CASES = [
+
+RETRIEVAL_TEST_CASES = [
     {
         "question": "How can I verify a Borg repository?",
         "expected_source": "borgbackup.md",
@@ -42,6 +45,51 @@ TEST_CASES = [
 ]
 
 
+ANSWER_TEST_CASES = [
+    {
+        "question": "Does BorgBackup support encryption?",
+        "must_contain": [
+            "encryption",
+        ],
+        "must_not_contain": [
+            FALLBACK_ANSWER,
+        ],
+    },
+    {
+        "question": "Does BorgBackup support deduplication?",
+        "must_contain": [
+            "deduplication",
+        ],
+        "must_not_contain": [
+            FALLBACK_ANSWER,
+        ],
+    },
+    {
+        "question": "Which commands are commonly used with BorgBackup?",
+        "must_contain": [
+            "borg create",
+            "borg prune",
+            "borg check",
+        ],
+        "must_not_contain": [
+            FALLBACK_ANSWER,
+        ],
+    },
+    {
+        "question": "How do I restore a BorgBackup archive?",
+        "exact_answer": FALLBACK_ANSWER,
+    },
+    {
+        "question": "Which encryption algorithm does BorgBackup use?",
+        "exact_answer": FALLBACK_ANSWER,
+    },
+    {
+        "question": "Does DNS use BorgBackup for encryption?",
+        "exact_answer": FALLBACK_ANSWER,
+    },
+]
+
+
 def source_filename(metadata):
     """Liest den Dateinamen aus den Chroma-Metadaten."""
 
@@ -63,13 +111,58 @@ def matches(actual_source, expected_source):
     return actual_source == expected_source
 
 
-def evaluator_self_test():
-    """Prüft die PASS/FAIL-Logik ohne ChromaDB."""
+def check_answer(answer, test_case):
+    """Prüft eine generierte Antwort."""
 
-    test_data = [
+    normalized_answer = answer.strip().casefold()
+
+    if "exact_answer" in test_case:
+        expected = test_case["exact_answer"].strip().casefold()
+        return normalized_answer == expected
+
+    for expected in test_case.get("must_contain", []):
+        if expected.casefold() not in normalized_answer:
+            return False
+
+    for forbidden in test_case.get("must_not_contain", []):
+        if forbidden.casefold() in normalized_answer:
+            return False
+
+    return True
+
+
+def evaluator_self_test():
+    """Prüft die PASS/FAIL-Logik ohne ChromaDB und Ollama."""
+
+    retrieval_tests = [
         ("borgbackup.md", "borgbackup.md", True),
         ("wireguard.md", "borgbackup.md", False),
         (None, "dns.md", False),
+    ]
+
+    answer_tests = [
+        (
+            "BorgBackup supports encryption.",
+            {
+                "must_contain": ["encryption"],
+                "must_not_contain": [FALLBACK_ANSWER],
+            },
+            True,
+        ),
+        (
+            FALLBACK_ANSWER,
+            {
+                "exact_answer": FALLBACK_ANSWER,
+            },
+            True,
+        ),
+        (
+            "BorgBackup uses AES encryption.",
+            {
+                "exact_answer": FALLBACK_ANSWER,
+            },
+            False,
+        ),
     ]
 
     print("Evaluator self-test")
@@ -77,14 +170,22 @@ def evaluator_self_test():
 
     failures = 0
 
-    for actual, expected, expected_result in test_data:
+    for actual, expected, expected_result in retrieval_tests:
         actual_result = matches(actual, expected)
         passed = actual_result == expected_result
 
-        print(f"Actual source:   {actual}")
-        print(f"Expected source: {expected}")
-        print(f"Expected result: {expected_result}")
-        print(f"Actual result:   {actual_result}")
+        print(f"Retrieval: {actual} / {expected}")
+        print("PASS" if passed else "FAIL")
+        print()
+
+        if not passed:
+            failures += 1
+
+    for answer, test_case, expected_result in answer_tests:
+        actual_result = check_answer(answer, test_case)
+        passed = actual_result == expected_result
+
+        print(f"Answer: {answer}")
         print("PASS" if passed else "FAIL")
         print()
 
@@ -110,7 +211,10 @@ def open_collection():
     collections = client.list_collections()
 
     if not collections:
-        print(f"No Chroma collection found in: {DB_PATH}", file=sys.stderr)
+        print(
+            f"No Chroma collection found in: {DB_PATH}",
+            file=sys.stderr,
+        )
         return None
 
     if len(collections) > 1:
@@ -145,14 +249,18 @@ def run_retrieval_tests():
         return 1
 
     model = SentenceTransformer(EMBEDDING_MODEL)
-
     passed_count = 0
 
-    for number, test_case in enumerate(TEST_CASES, start=1):
+    print("=== RETRIEVAL TESTS ===")
+    print()
+
+    for number, test_case in enumerate(
+        RETRIEVAL_TEST_CASES,
+        start=1,
+    ):
         question = test_case["question"]
         expected_source = test_case["expected_source"]
 
-        # Diese Einstellung muss zu ingest.py passen.
         embedding = model.encode(
             question,
             normalize_embeddings=False,
@@ -165,11 +273,11 @@ def run_retrieval_tests():
         )
 
         if not result["ids"] or not result["ids"][0]:
-            print(f"Test {number}")
-            print(f"Question: {question}")
-            print("FAIL: no result")
-            print()
-            continue
+                print(f"Test {number}")
+                print(f"Question: {question}")
+                print("FAIL: no result")
+                print()
+                continue
 
         metadata = result["metadatas"][0][0] or {}
         distance = result["distances"][0][0]
@@ -182,23 +290,77 @@ def run_retrieval_tests():
         print(f"Expected: {expected_source}")
         print(f"Actual:   {actual_source}")
         print(f"Distance: {distance:.4f}")
-        print(f"Metadata: {metadata}")
         print("PASS" if passed else "FAIL")
         print()
 
         if passed:
             passed_count += 1
 
-    total_count = len(TEST_CASES)
+    total_count = len(RETRIEVAL_TEST_CASES)
 
-    print(f"{passed_count}/{total_count} retrieval tests passed")
+    print(
+        f"{passed_count}/{total_count} retrieval tests passed"
+    )
+
+    return 0 if passed_count == total_count else 1
+
+
+def run_answer_tests():
+    """Führt die Strict-RAG-Antworttests aus."""
+
+    passed_count = 0
+
+    print()
+    print("=== STRICT RAG ANSWER TESTS ===")
+    print()
+
+    for number, test_case in enumerate(
+        ANSWER_TEST_CASES,
+        start=1,
+    ):
+        question = test_case["question"]
+
+        try:
+            answer, sources = answer_question(question)
+            passed = check_answer(answer, test_case)
+        except Exception as error:
+            answer = f"ERROR: {error}"
+            sources = []
+            passed = False
+
+        print(f"Test {number}")
+        print(f"Question: {question}")
+        print(f"Answer:   {answer}")
+
+        if sources:
+            source_names = []
+
+            for source in sources:
+                name = source.get("source")
+
+                if name and name not in source_names:
+                    source_names.append(name)
+
+            print(f"Sources:  {', '.join(source_names)}")
+
+        print("PASS" if passed else "FAIL")
+        print()
+
+        if passed:
+            passed_count += 1
+
+    total_count = len(ANSWER_TEST_CASES)
+
+    print(
+        f"{passed_count}/{total_count} answer tests passed"
+    )
 
     return 0 if passed_count == total_count else 1
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate retrieval from the local ChromaDB."
+        description="Evaluate retrieval and Strict RAG answers."
     )
 
     parser.add_argument(
@@ -207,12 +369,33 @@ def main():
         help="Test only the PASS/FAIL evaluation logic.",
     )
 
+    parser.add_argument(
+        "--retrieval-only",
+        action="store_true",
+        help="Run only retrieval tests.",
+    )
+
+    parser.add_argument(
+        "--answers-only",
+        action="store_true",
+        help="Run only Strict RAG answer tests.",
+    )
+
     args = parser.parse_args()
 
     if args.self_test:
         return evaluator_self_test()
 
-    return run_retrieval_tests()
+    if args.retrieval_only:
+        return run_retrieval_tests()
+
+    if args.answers_only:
+        return run_answer_tests()
+
+    retrieval_result = run_retrieval_tests()
+    answer_result = run_answer_tests()
+
+    return 0 if retrieval_result == 0 and answer_result == 0 else 1
 
 
 if __name__ == "__main__":
