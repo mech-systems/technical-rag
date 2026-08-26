@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from pathlib import Path
 import subprocess
 
@@ -8,73 +10,119 @@ from sentence_transformers import SentenceTransformer
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DB_PATH = PROJECT_ROOT / "db"
 
-model = SentenceTransformer("all-MiniLM-L6-v2")
+COLLECTION_NAME = "knowledge"
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+OLLAMA_MODEL = "granite4.1:3b"
+RESULT_COUNT = 5
 
+FALLBACK_ANSWER = (
+    "I could not find that information in the knowledge base."
+)
+
+
+model = SentenceTransformer(EMBEDDING_MODEL)
 client = chromadb.PersistentClient(path=str(DB_PATH))
-collection = client.get_collection("knowledge")
+collection = client.get_collection(COLLECTION_NAME)
 
-while True:
-    question = input("\nQuestion (exit to quit): ").strip()
+def answer_question(question):
+    question = question.strip()
 
-    if not question or question.lower() in {"exit", "quit"}:
-        break
+    query_embedding = model.encode(question).tolist()
 
-    embedding = model.encode(
-        question,
-        normalize_embeddings=False,
-    ).tolist()
-
-    result = collection.query(
-        query_embeddings=[embedding],
-        n_results=3,
-        include=["documents", "metadatas"],
+    results = collection.query(
+        query_embeddings=[query_embedding],
+        n_results=RESULT_COUNT,
     )
 
-    documents = [
-        document
-        for document in result["documents"][0]
-        if document.strip()
-    ]
-
-    if not documents:
-        print("No matching documents found.")
-        continue
+    documents = results["documents"][0]
+    metadatas = results["metadatas"][0]
+    distances = results["distances"][0]
 
     context = "\n\n".join(documents)
 
     prompt = f"""
-Answer ONLY using the provided context.
-If the answer is not explicitly contained in the context, respond:
-"I could not find that information in the knowledge base."
+You answer questions using only the supplied context.
 
-Context:
+NON-NEGOTIABLE RULES
+
+- Use only information explicitly stated in the context.
+- Answer in the same language as the question.
+- Do not use prior knowledge or assumptions.
+- Do not add commands or options not required by the question.
+- Preserve commands, filenames, options, and values exactly.
+- If the context is insufficient, return exactly:
+{FALLBACK_ANSWER}
+
+CONTEXT
+
 {context}
 
-Question:
+QUESTION
+
 {question}
 
-Answer:
+REQUIRED OUTPUT
+
+Return only the final answer.
 """
 
-    response = subprocess.run(
-        ["ollama", "run", "granite4.1:3b"],
+    result = subprocess.run(
+        ["ollama", "run", OLLAMA_MODEL],
         input=prompt,
-        capture_output=True,
         text=True,
+        capture_output=True,
+        check=True,
     )
 
-    print("\n=== ANSWER ===\n")
-    print(response.stdout)
-
-    print("\n=== SOURCES ===\n")
+    answer = result.stdout.strip()
 
     sources = []
 
-    for metadata in result["metadatas"][0]:
-        source = metadata.get("source")
+    for metadata, distance in zip(metadatas, distances):
+        sources.append(
+            {
+                "source": metadata.get("source", "unknown"),
+                "chunk": metadata.get("chunk"),
+                "distance": distance,
+            }
+        )
 
-        if source and source not in sources:
-            sources.append(source)
+    return answer, sources
 
-    for number, source in enumerate(sources, start=1):
-        print(f"{number}. {source}")
+def main():
+    print("Strict RAG interactive mode")
+    print("Enter 'exit' or 'quit' to stop.")
+
+    while True:
+        try:
+            question = input("\nQuestion: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nExiting.")
+            break
+
+        if question.casefold() in {"exit", "quit"}:
+            print("Exiting.")
+            break
+
+        if not question:
+            continue
+
+        try:
+            answer, sources = answer_question(question)
+        except Exception as error:
+            print(f"\nERROR: {error}")
+            continue
+
+        print("\n=== ANSWER ===\n")
+        print(answer)
+
+        print("\n=== RETRIEVED SOURCES ===\n")
+
+        for source in sources:
+            print(
+                f"- {source['source']}, "
+                f"distance: {source['distance']:.4f}"
+            )
+
+if __name__ == "__main__":
+    main()
