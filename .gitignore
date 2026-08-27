@@ -64,3 +64,5 @@ vault_pass.txt
 *.tfstate
 *.tfstate.*
 
+# Evaluation reports
+dontgitit_*
