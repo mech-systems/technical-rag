@@ -14,6 +14,7 @@ COLLECTION_NAME = "knowledge"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 OLLAMA_MODEL = "granite4.1:3b"
 RESULT_COUNT = 5
+MAX_DISTANCE = 1.35
 
 FALLBACK_ANSWER = (
     "I could not find that information in the knowledge base."
@@ -37,8 +38,32 @@ def answer_question(question):
     documents = results["documents"][0]
     metadatas = results["metadatas"][0]
     distances = results["distances"][0]
+    document_ids = results["ids"][0]
 
-    context = "\n\n".join(documents)
+    relevant_results = [
+        {
+            "id": document_id,
+            "document": document,
+            "metadata": metadata,
+            "distance": distance,
+        }
+        for document_id, document, metadata, distance in zip(
+            document_ids,
+            documents,
+            metadatas,
+            distances,
+        )
+        if document.strip() and distance <= MAX_DISTANCE
+    ]
+
+    if not relevant_results:
+        return FALLBACK_ANSWER, []
+
+    context = "\n\n".join(
+        f"[source: {item['metadata'].get('source', 'unknown')}]\n"
+        f"{item['document']}"
+        for item in relevant_results
+    )
 
     prompt = f"""
 You answer questions using only the supplied context.
@@ -48,6 +73,7 @@ NON-NEGOTIABLE RULES
 - Use only information explicitly stated in the context.
 - Answer in the same language as the question.
 - Do not use prior knowledge or assumptions.
+- Do not infer a negative answer from missing information.
 - Do not add commands or options not required by the question.
 - Preserve commands, filenames, options, and values exactly.
 - If the context is insufficient, return exactly:
@@ -76,16 +102,14 @@ Return only the final answer.
 
     answer = result.stdout.strip()
 
-    sources = []
-
-    for metadata, distance in zip(metadatas, distances):
-        sources.append(
-            {
-                "source": metadata.get("source", "unknown"),
-                "chunk": metadata.get("chunk"),
-                "distance": distance,
-            }
-        )
+    sources = [
+        {
+            "source": item["metadata"].get("source", "unknown"),
+            "chunk": item["metadata"].get("chunk", item["id"]),
+            "distance": item["distance"],
+        }
+        for item in relevant_results
+    ]
 
     return answer, sources
 
