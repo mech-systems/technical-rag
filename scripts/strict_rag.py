@@ -12,7 +12,12 @@ DB_PATH = PROJECT_ROOT / "db"
 
 COLLECTION_NAME = "knowledge"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-OLLAMA_MODEL = "granite4.1:3b"
+
+OLLAMA_COMMAND = "/usr/local/bin/ollama"
+#OLLAMA_MODEL = "granite4.1:3b"
+#adding to the model PARAMETER temperature 0 and PARAMETER seed 42
+OLLAMA_MODEL = "strict-rag"
+
 RESULT_COUNT = 5
 MAX_DISTANCE = 1.35
 
@@ -93,7 +98,7 @@ Return only the final answer.
 """
 
     result = subprocess.run(
-        ["ollama", "run", OLLAMA_MODEL],
+        [OLLAMA_COMMAND, "run", OLLAMA_MODEL],
         input=prompt,
         text=True,
         capture_output=True,
