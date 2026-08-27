@@ -1,0 +1,4 @@
+FROM granite4.1:3b
+
+PARAMETER temperature 0
+PARAMETER seed 42
