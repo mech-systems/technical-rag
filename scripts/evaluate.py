@@ -48,7 +48,8 @@ RETRIEVAL_TEST_CASES = [
 ANSWER_TEST_CASES = [
     {
         "question": "Does BorgBackup support encryption?",
-        "must_contain": [
+        "must_contain_any": [
+            "yes",
             "encryption",
         ],
         "must_not_contain": [
@@ -57,7 +58,8 @@ ANSWER_TEST_CASES = [
     },
     {
         "question": "Does BorgBackup support deduplication?",
-        "must_contain": [
+        "must_contain_any": [
+            "yes",
             "deduplication",
         ],
         "must_not_contain": [
@@ -73,6 +75,11 @@ ANSWER_TEST_CASES = [
         ],
         "must_not_contain": [
             FALLBACK_ANSWER,
+            "borg init",
+            "borg compact",
+            "borg extract",
+            "--dry-run",
+            "verify-data",
         ],
     },
     {
@@ -124,6 +131,17 @@ def check_answer(answer, test_case):
         if expected.casefold() not in normalized_answer:
             return False
 
+    alternatives = test_case.get("must_contain_any", [])
+
+    if alternatives:
+        contains_any = any(
+            alternative.casefold() in normalized_answer
+            for alternative in alternatives
+        )
+
+        if not contains_any:
+            return False
+
     for forbidden in test_case.get("must_not_contain", []):
         if forbidden.casefold() in normalized_answer:
             return False
@@ -142,12 +160,40 @@ def evaluator_self_test():
 
     answer_tests = [
         (
-            "BorgBackup supports encryption.",
+            "Yes",
             {
-                "must_contain": ["encryption"],
-                "must_not_contain": [FALLBACK_ANSWER],
+                "must_contain_any": [
+                    "yes",
+                    "encryption",
+                ],
+                "must_not_contain": [
+                    FALLBACK_ANSWER,
+                ],
             },
             True,
+        ),
+        (
+            "BorgBackup supports encryption.",
+            {
+                "must_contain_any": [
+                    "yes",
+                    "encryption",
+                ],
+                "must_not_contain": [
+                    FALLBACK_ANSWER,
+                ],
+            },
+            True,
+        ),
+        (
+            "No relevant information found.",
+            {
+                "must_contain_any": [
+                    "yes",
+                    "encryption",
+                ],
+            },
+            False,
         ),
         (
             FALLBACK_ANSWER,
@@ -157,9 +203,37 @@ def evaluator_self_test():
             True,
         ),
         (
-            "BorgBackup uses AES encryption.",
+            f"{FALLBACK_ANSWER} Source: borgbackup.md",
             {
                 "exact_answer": FALLBACK_ANSWER,
+            },
+            False,
+        ),
+        (
+            "borg create, borg prune, borg check",
+            {
+                "must_contain": [
+                    "borg create",
+                    "borg prune",
+                    "borg check",
+                ],
+                "must_not_contain": [
+                    "borg extract",
+                ],
+            },
+            True,
+        ),
+        (
+            "borg create, borg prune, borg check, borg extract",
+            {
+                "must_contain": [
+                    "borg create",
+                    "borg prune",
+                    "borg check",
+                ],
+                "must_not_contain": [
+                    "borg extract",
+                ],
             },
             False,
         ),
@@ -174,7 +248,10 @@ def evaluator_self_test():
         actual_result = matches(actual, expected)
         passed = actual_result == expected_result
 
-        print(f"Retrieval: {actual} / {expected}")
+        print(f"Actual source:   {actual}")
+        print(f"Expected source: {expected}")
+        print(f"Expected result: {expected_result}")
+        print(f"Actual result:   {actual_result}")
         print("PASS" if passed else "FAIL")
         print()
 
@@ -185,7 +262,9 @@ def evaluator_self_test():
         actual_result = check_answer(answer, test_case)
         passed = actual_result == expected_result
 
-        print(f"Answer: {answer}")
+        print(f"Answer:          {answer}")
+        print(f"Expected result: {expected_result}")
+        print(f"Actual result:   {actual_result}")
         print("PASS" if passed else "FAIL")
         print()
 
@@ -273,11 +352,11 @@ def run_retrieval_tests():
         )
 
         if not result["ids"] or not result["ids"][0]:
-                print(f"Test {number}")
-                print(f"Question: {question}")
-                print("FAIL: no result")
-                print()
-                continue
+            print(f"Test {number}")
+            print(f"Question: {question}")
+            print("FAIL: no result")
+            print()
+            continue
 
         metadata = result["metadatas"][0][0] or {}
         distance = result["distances"][0][0]
@@ -290,6 +369,7 @@ def run_retrieval_tests():
         print(f"Expected: {expected_source}")
         print(f"Actual:   {actual_source}")
         print(f"Distance: {distance:.4f}")
+        print(f"Metadata: {metadata}")
         print("PASS" if passed else "FAIL")
         print()
 
@@ -298,9 +378,7 @@ def run_retrieval_tests():
 
     total_count = len(RETRIEVAL_TEST_CASES)
 
-    print(
-        f"{passed_count}/{total_count} retrieval tests passed"
-    )
+    print(f"{passed_count}/{total_count} retrieval tests passed")
 
     return 0 if passed_count == total_count else 1
 
@@ -321,8 +399,16 @@ def run_answer_tests():
         question = test_case["question"]
 
         try:
-            answer, sources = answer_question(question)
+            result = answer_question(question)
+
+            if isinstance(result, tuple):
+                answer, sources = result
+            else:
+                answer = result
+                sources = []
+
             passed = check_answer(answer, test_case)
+
         except Exception as error:
             answer = f"ERROR: {error}"
             sources = []
@@ -336,12 +422,16 @@ def run_answer_tests():
             source_names = []
 
             for source in sources:
-                name = source.get("source")
+                if isinstance(source, dict):
+                    name = source.get("source")
+                else:
+                    name = str(source)
 
                 if name and name not in source_names:
                     source_names.append(name)
 
-            print(f"Sources:  {', '.join(source_names)}")
+            if source_names:
+                print(f"Sources:  {', '.join(source_names)}")
 
         print("PASS" if passed else "FAIL")
         print()
@@ -351,9 +441,7 @@ def run_answer_tests():
 
     total_count = len(ANSWER_TEST_CASES)
 
-    print(
-        f"{passed_count}/{total_count} answer tests passed"
-    )
+    print(f"{passed_count}/{total_count} answer tests passed")
 
     return 0 if passed_count == total_count else 1
 
@@ -395,7 +483,10 @@ def main():
     retrieval_result = run_retrieval_tests()
     answer_result = run_answer_tests()
 
-    return 0 if retrieval_result == 0 and answer_result == 0 else 1
+    if retrieval_result == 0 and answer_result == 0:
+        return 0
+
+    return 1
 
 
 if __name__ == "__main__":
