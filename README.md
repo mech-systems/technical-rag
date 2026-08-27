@@ -16,9 +16,11 @@ This is a learning and portfolio project, not a production system. It uses publi
 - Semantic search
 - Local answer generation through Ollama
 - Strict RAG mode with a defined fallback answer
+- Retrieval distance threshold
 - Source attribution based on ChromaDB metadata
 - Automated retrieval and answer tests
 - German and English questions
+- Deterministic generation settings for repeatable evaluation
 
 ## Architecture
 
@@ -35,7 +37,7 @@ SentenceTransformers embeddings
 ChromaDB collection
         |
         v
-semantic retrieval
+semantic retrieval + distance filter
         |
         v
 retrieved context + strict prompt
@@ -63,6 +65,7 @@ technical-rag/
 │   ├── query.py
 │   ├── rag.py
 │   └── strict_rag.py
+├── Modelfile.strict-rag
 ├── README.md
 ├── requirements.txt
 ├── LICENSE
@@ -74,9 +77,10 @@ technical-rag/
 - `ingest.py`: reads Markdown files, splits them into overlapping chunks, creates embeddings, and rebuilds the ChromaDB collection.
 - `query.py`: performs semantic retrieval without answer generation.
 - `rag.py`: demonstrates basic retrieval followed by local answer generation.
-- `strict_rag.py`: applies stricter context-only prompting, a fallback response, source output, and interactive questioning.
+- `strict_rag.py`: applies context-only prompting, a fallback response, distance filtering, source output, and interactive questioning.
 - `evaluate.py`: runs retrieval tests and Strict RAG answer tests.
 - `inspect_db.py`: displays stored document IDs, metadata, and chunk content.
+- `Modelfile.strict-rag`: configures deterministic Ollama generation with temperature `0` and seed `42`.
 
 ## Requirements
 
@@ -102,10 +106,16 @@ Install the Python dependencies:
 pip install -r requirements.txt
 ```
 
-Make sure Ollama is installed and the configured model is available:
+Make sure Ollama is installed and the base model is available:
 
 ```bash
 ollama pull granite4.1:3b
+```
+
+Create the configured Strict RAG model:
+
+```bash
+ollama create strict-rag -f Modelfile.strict-rag
 ```
 
 ## Build the Knowledge Base
@@ -154,32 +164,65 @@ Example question:
 How do I copy files in archive mode?
 ```
 
-A grounded answer should identify `-a` or `--archive` and explain that archive mode is equivalent to `-rlptgoD`, provided this information was retrieved from the knowledge base.
+A grounded answer should identify `-a` or `--archive`, provided this information is present in the retrieved context.
 
 ## Evaluation
 
-Run the automated evaluation:
+Run all automated tests:
 
 ```bash
 python scripts/evaluate.py
 ```
 
-The evaluation covers two areas:
+Run only answer tests:
+
+```bash
+python scripts/evaluate.py --answers-only
+```
+
+Run only retrieval tests:
+
+```bash
+python scripts/evaluate.py --retrieval-only
+```
+
+The evaluation covers two separate areas:
 
 - Retrieval tests verify that a question retrieves the expected source document.
-- Answer tests verify expected content, forbidden content, and exact fallback responses.
+- Answer tests verify required content, acceptable alternatives, forbidden content, and exact fallback responses.
 
 Example answer-test expectations:
 
 ```python
 {
     "question": "How do I copy files in archive mode?",
-    "must_contain": ["-a", "-rlptgoD"],
+    "must_contain_any": ["-a", "--archive"],
     "must_not_contain": ["-A", "--delete"],
 }
 ```
 
-`must_not_contain` is useful for detecting unsupported additions and known model mistakes.
+`must_not_contain` helps detect unsupported additions and known model mistakes. These checks are intentionally simple and transparent rather than a complete semantic evaluation.
+
+## Observed Hallucinations
+
+The experiments show that correct retrieval does not guarantee a fully grounded answer. The local language model may still use pretrained knowledge or make unsupported inferences when the retrieved topic is familiar but the requested detail is absent.
+
+Observed examples include:
+
+- Naming a specific BorgBackup encryption algorithm even though the retrieved context did not specify one.
+- Producing a concrete `borg extract` command when the evaluated context was expected to be insufficient.
+- Expanding a request for commonly used Borg commands with additional commands and options not required by the test.
+- Answering `No` when the knowledge base contained no evidence for either a positive or a negative answer.
+
+These cases are retained as negative tests. They demonstrate the difference between:
+
+- retrieving a thematically relevant document,
+- finding explicit evidence for the requested fact,
+- and generating an answer that remains within that evidence.
+
+A retrieval distance threshold reduces unrelated context, but it does not prevent unsupported conclusions from thematically relevant chunks. Setting temperature to `0` and seed to `42` makes failures more reproducible, but does not make unsupported answers factually grounded.
+
+The project therefore does not claim that prompt-based Strict RAG eliminates hallucinations. Instead, it makes them visible through repeatable tests, explicit fallback behavior, retrieved-source output, and documented limitations.
 
 ## Knowledge Base
 
@@ -206,20 +249,26 @@ The project intentionally avoids orchestration and RAG frameworks. The individua
 
 ### Explicit source attribution
 
-The source filename is stored during ingestion and returned with retrieval results. This makes it possible to see which documents were supplied to the model.
+The source filename is stored during ingestion and returned with retrieval results. This shows which documents were supplied to the model. It does not prove that every generated statement is supported by those documents.
 
 ### Separate retrieval and answer evaluation
 
-A correct answer can still be based on poor retrieval, and good retrieval can still produce an incorrect answer. Testing both stages separately makes failures easier to understand.
+A correct answer can still be based on poor retrieval, and good retrieval can still produce an unsupported answer. Testing both stages separately makes failures easier to understand.
+
+### Reproducible evaluation
+
+Deterministic generation settings reduce variation between runs. This makes repeated failures easier to compare and investigate.
 
 ## Known Limitations
 
 - A strict prompt cannot guarantee that a language model will never use pretrained knowledge.
 - Retrieved context can be relevant but still insufficient to answer a question.
 - Similarity distance alone is not proof that a passage supports the answer.
+- A fixed distance threshold must be calibrated for the current embedding model and knowledge base.
 - Character-based chunking can split related Markdown content across chunks.
-- Source attribution currently identifies retrieved sources, not necessarily every passage actually used by the model.
-- The evaluation uses deterministic string checks and does not measure semantic correctness comprehensively.
+- Source attribution identifies retrieved sources, not necessarily every passage actually used by the model.
+- Deterministic string checks do not measure semantic correctness comprehensively.
+- Known negative tests can detect repeatable failures, but not every possible hallucination.
 - The demonstrator is not designed for production workloads, access control, multi-user operation, or untrusted documents.
 
 ## Security and Data Scope
@@ -238,12 +287,15 @@ The core demonstrator is complete:
 - embeddings
 - vector storage
 - semantic retrieval
+- retrieval distance filtering
 - local RAG
 - strict prompting
 - source attribution
+- deterministic generation settings
 - automated retrieval and answer tests
+- documented hallucination behavior
 
-Further work should focus on small, measurable improvements such as retrieval thresholds, clearer chunk attribution, and evaluation reporting rather than adding unnecessary infrastructure.
+Further work should focus on small and measurable improvements rather than additional infrastructure.
 
 ## License
 
