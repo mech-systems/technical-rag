@@ -74,7 +74,12 @@ def answer_question(question):
 You answer questions using only the supplied context.
 
 NON-NEGOTIABLE RULES
+- A thematically relevant context is not sufficient evidence.
+- Answer only if the context explicitly states the requested fact,
+command purpose, option meaning, or relationship.
 
+If explicit evidence is missing, return exactly:
+I could not find that information in the knowledge base.
 - Use only information explicitly stated in the context.
 - Answer in the same language as the question.
 - Do not use prior knowledge or assumptions.
