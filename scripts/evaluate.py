@@ -42,10 +42,7 @@ ANSWER_TEST_CASES = [
         "must_contain": ["borg create", "borg prune", "borg check" , "borg extract"],
         "must_not_contain": [
             FALLBACK_ANSWER,
-            "borg init",
-            "borg compact",
-            "--dry-run",
-            "verify-data",
+            "rsync",
         ],
     },
     {
