@@ -39,20 +39,24 @@ ANSWER_TEST_CASES = [
     {
         "question": "Which commands are commonly used with BorgBackup?",
         "answer_expected": True,
-        "must_contain": ["borg create", "borg prune", "borg check"],
+        "must_contain": ["borg create", "borg prune", "borg check" , "borg extract"],
         "must_not_contain": [
             FALLBACK_ANSWER,
             "borg init",
             "borg compact",
-            "borg extract",
             "--dry-run",
             "verify-data",
         ],
     },
     {
         "question": "How do I restore a BorgBackup archive?",
-        "answer_expected": False,
-        "exact_answer": FALLBACK_ANSWER,
+        "answer_expected": True,
+        "exact_answer": "borg extract",
+        "must_not_contain": [
+            FALLBACK_ANSWER,
+            "borg prune",
+            "borg compact",
+        ],
     },
     {
         "question": "Which encryption algorithm does BorgBackup use?",
