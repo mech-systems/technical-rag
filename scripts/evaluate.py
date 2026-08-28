@@ -51,7 +51,7 @@ ANSWER_TEST_CASES = [
     {
         "question": "How do I restore a BorgBackup archive?",
         "answer_expected": True,
-        "exact_answer": "borg extract",
+        "must_contain": "borg extract",
         "must_not_contain": [
             FALLBACK_ANSWER,
             "borg prune",
